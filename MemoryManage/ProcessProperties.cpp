@@ -1,10 +1,13 @@
 #include "ProcessProperties.hpp"
 #include <iostream>
 #include <stack>
-#include <queue>
+#include <algorithm>
 #include <cstdio>
+#include <limits>
 
 Swap* swaps;
+bool maga = false;
+int* globalPandemic;
 
 ProcessProperties::ProcessProperties()
 {
@@ -14,24 +17,47 @@ ProcessProperties::ProcessProperties()
     _iterations = 0;
     _pageFault = 0;
 }
-bool ProcessProperties::Insert(int page_val)
+
+
+bool ProcessProperties::Insert(int page_val, int *swapped = nullptr)
 {
-    bool inserted = _table.insert(page_val).second; //inserted or not
+    bool inserted = _tableCheck.insert(page_val).second; //inserted or not 
+
     if (inserted)
+    {
+        maga = false;
         _pageFault++;
+        if (swapped)
+        {
+            _tableCheck.erase(*swapped);
+            auto iter = find(_table.begin(), _table.end(), *swapped);
+            *iter = page_val;
+        }
+        else
+        {
+            _table.emplace_back(page_val);
+        }
+    }
+    else
+        maga = true;
+
     _iterations++;
     return inserted;
 }
 void ProcessProperties::LIFO(std::string referenceString)
 {
     std::stack<int> tableStack;
+    std::vector<std::string> pages;
+    char delimiter = ' ';
     swaps = new Swap;
+    _tableCheck.clear();
+    _table.clear();
 
-    removeDuplicates(referenceString);
+    simple_tokenizer(referenceString, pages, delimiter);
 
-    for (int i = 0; i < referenceString.size(); i++)
+    for (int i = 0; i < pages.size(); i++)
     {
-        _focus = referenceString[i] - '0';
+        _focus = std::stoi(pages[i]);
 
         if (_workingSet != _size)
         {
@@ -44,16 +70,70 @@ void ProcessProperties::LIFO(std::string referenceString)
         }
         else
         {
-            if (this->Insert(_focus))
+            if (this->Insert(_focus, &(tableStack.top())))
             {
-                _table.erase(tableStack.top());
                 swaps->swappedOut[tableStack.top()]++;
                 tableStack.pop();
                 tableStack.push(_focus);
                 swaps->swappedIn[_focus]++;
             }
         }
+        std::cout << _focus << std::endl;
+        this->toString();
+    }
 
+    this->showInfo();
+    delete swaps;
+}
+void ProcessProperties::LRU(std::string referenceString)
+{
+    std::queue<int> last_elements;
+    std::vector<std::string> pages;
+    char delimiter = ' ';
+    swaps = new Swap;
+    _tableCheck.clear();
+    _table.clear();
+
+    simple_tokenizer(referenceString, pages, delimiter);
+
+    for (int i = 0; i < pages.size(); i++)
+    {
+        _focus = std::stoi(pages[i]);
+
+        if (_workingSet != _size)
+        {
+            if (this->Insert(_focus))
+            {
+                last_elements.push(_focus);
+                swaps->swappedIn[_focus]++;
+                _workingSet++;
+            }
+        }
+        else
+        {
+            if (this->Insert(_focus, &(last_elements.front())))
+            {
+                swaps->swappedOut[last_elements.front()]++;
+                last_elements.pop();
+                last_elements.push(_focus);
+                swaps->swappedIn[_focus]++;
+            }
+        }
+
+        if (maga)
+        {
+            for (int i = 0; i < last_elements.size(); i++)
+            {
+                last_elements.push(last_elements.front());
+                last_elements.pop();
+                if (last_elements.front() == _focus)
+                    break;
+            }
+            last_elements.pop();
+            last_elements.push(_focus);
+        }
+
+        std::cout << _focus << std::endl;
         this->toString();
     }
 
@@ -62,15 +142,18 @@ void ProcessProperties::LIFO(std::string referenceString)
 }
 void ProcessProperties::FIFO(std::string referenceString)
 {
-
     std::queue<int> tableQueue;
+    std::vector<std::string> pages;
+    char delimiter = ' ';
     swaps = new Swap;
+    _tableCheck.clear();
+    _table.clear();
 
-    removeDuplicates(referenceString);
+    simple_tokenizer(referenceString, pages, delimiter);
 
-    for (int i = 0; i < referenceString.size(); i++)
+    for (int i = 0; i < pages.size(); i++)
     {
-        _focus = referenceString[i] - '0';
+        _focus = std::stoi(pages[i]);
 
         if (_workingSet != _size)
         {
@@ -83,15 +166,15 @@ void ProcessProperties::FIFO(std::string referenceString)
         }
         else
         {
-            if (this->Insert(_focus))
+            if (this->Insert(_focus, &(tableQueue.front())))
             {
-                _table.erase(tableQueue.front());
                 swaps->swappedOut[tableQueue.front()]++;
                 tableQueue.pop();
                 tableQueue.push(_focus);
                 swaps->swappedIn[_focus]++;
             }
         }
+        std::cout << _focus << std::endl;
         this->toString();
     }
 
@@ -99,6 +182,141 @@ void ProcessProperties::FIFO(std::string referenceString)
     delete swaps;
         
 }
+
+void ProcessProperties::LFU(std::string referenceString)
+{
+    std::queue<int> tableQueue;
+    std::vector<std::string> pages;
+    std::map<int, int> usage;
+    int zibi;
+    int* swappedOut_ptr = nullptr;
+    char delimiter = ' ';
+    swaps = new Swap;
+    _tableCheck.clear();
+    _table.clear();
+    simple_tokenizer(referenceString, pages, delimiter);
+
+
+    for (int i = 0; i < pages.size(); i++)
+    {
+        _focus = std::stoi(pages[i]);
+
+        if (_workingSet != _size)
+        {
+            if (this->Insert(_focus))
+            {
+                if(!isInsideQueue(tableQueue, _focus))
+                    tableQueue.push(_focus);
+                swaps->swappedIn[_focus]++;
+                _workingSet++;
+            }
+            usage[_focus]++;
+        }
+        else
+        {
+            zibi = findMinPage(usage, tableQueue);
+            swappedOut_ptr = &zibi;
+
+            if (this->Insert(_focus, swappedOut_ptr))
+            {               
+                if (!maga)
+                {
+                    usage[zibi] = 0;    
+                    tableQueue.push(_focus);
+                    removeFromQueue(tableQueue, zibi);
+                    swaps->swappedOut[zibi]++;
+                }
+                swaps->swappedIn[_focus]++;
+            }
+            usage[_focus]++;
+        }
+        std::cout << _focus << std::endl;
+        this->toString();
+    }
+
+    this->showInfo();
+    delete swaps;
+
+}
+int findMinPage(std::map<int, int> &usageMap, std::queue<int> &pageQueue)
+{
+    //(*(usageMap.begin())).second
+    int minVal = INT_MAX;
+    int key = -1;
+    int qHead = pageQueue.front();
+    bool found = false;
+
+    for (auto i = usageMap.begin(); i != usageMap.end(); i++)
+    {
+        if(i->second < minVal && i->second != 0)
+            minVal = i->second;
+    }
+
+    if (usageMap[pageQueue.front()] == minVal)
+    {
+        key = pageQueue.front();
+        found = true;
+    }
+    else
+    {
+        do
+        {
+            if (usageMap[pageQueue.front()] == minVal && key == -1)
+            {
+                key = pageQueue.front();
+                found = true;
+            }
+            pageQueue.push(pageQueue.front());
+            pageQueue.pop();
+        } while (pageQueue.front() != qHead);
+    }
+    
+    return key;
+
+}
+bool isInsideQueue(std::queue<int> &tableQueue, int val)
+{
+    if (tableQueue.empty())
+        return false;
+    int qHead = tableQueue.front();
+    int temp;
+    bool isInside = false;
+    do
+    {
+        temp = tableQueue.front();
+        tableQueue.pop();    
+        if (temp == val)       
+          isInside = true;
+                  
+        tableQueue.push(temp);
+    } while (tableQueue.front() != qHead);
+    
+    return isInside;
+}
+
+void removeFromQueue(std::queue<int>& tableQueue, int val)
+{
+    if (tableQueue.empty())
+        return;
+    int qHead = tableQueue.front();
+    int temp;
+    if(tableQueue.front()==val)
+        tableQueue.pop();
+    else
+    {
+        do
+        {
+            temp = tableQueue.front();
+            tableQueue.pop();
+            if (temp != val)
+                tableQueue.push(temp);
+
+        } while (tableQueue.front() != qHead);
+    }
+}
+
+
+
 void ProcessProperties::showInfo()
 {
     std::cout << "Page faults: " << _pageFault << std::endl;
@@ -108,7 +326,7 @@ void ProcessProperties::showInfo()
     std::cout << "number of swap in:\n";
     for (iter = swaps->swappedIn.begin(); iter != swaps->swappedIn.end(); iter++)
     {
-        std::cout << (*iter).first << ": " << (*iter).second << std::endl;
+        std::cout << (*iter).first << ": " << (*iter).second << std::endl; //or iter->first
     }
 
     std::cout << "number of swap out:\n";
@@ -120,29 +338,21 @@ void ProcessProperties::showInfo()
 }
 void removeDuplicates(std::string& s)
 {
-    size_t n = s.length();
-    std::string str = "";
-    // We don't need to do anything for
-    // empty string.
-    if (n == 0)
-        return;
+    using std::string;
+    int new_size = 0;
+    string::iterator iter;
 
-    // Traversing string
-    for (int i = 0; i < n - 1; i++) 
-    {
-        //checking if s[i] is not same as s[i+1] then add it into str
-        if (s[i] != s[i + 1]) 
-        {
-            str += s[i];
-        }
-    }
-    //Since the last character will not be inserted in the loop we add it at the end
-    str.push_back(s[n - 1]);
-    s = str;
+    iter = std::unique(s.begin(), s.end());
+
+    for (auto i = s.begin(); i < iter; i++)
+        new_size++;
+
+    s.resize(new_size);
+    std::cout << s << std::endl;
 }
 void ProcessProperties::toString()
 {
-    std::set<int>::iterator iter = _table.begin();
+    std::vector<int>::iterator iter = _table.begin();
     std::cout << "|-----|  iterations: " << _iterations << std::endl;
     for (int i = 0; i < _size; i++)
     {
@@ -159,6 +369,28 @@ void ProcessProperties::toString()
         std::cout << "|-----|" << std::endl;
     }
     std::cout << std::endl;
+}
+void simple_tokenizer(std::string s, std::vector<std::string> &vec, char delimiter)
+{
+    int currIndex = 0, i = 0;
+    int startIndex = 0, endIndex = 0;
+
+    while (i <= s.length())
+    {
+        if (s[i] == delimiter || i == s.length())
+        {
+            endIndex = i;
+            std::string subStr = "";
+            subStr.append(s, startIndex, endIndex - startIndex);
+            vec.emplace_back(subStr);
+            currIndex += 1;
+            startIndex = endIndex + 1;
+        }
+        i++;
+    }
+
+    for (int i = 0; i < vec.size(); i++)
+        std::cout << vec.at(i) << " ";
 }
 ProcessProperties::~ProcessProperties()
 {

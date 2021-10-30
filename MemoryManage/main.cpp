@@ -3,10 +3,14 @@
 
 int main()
 {
-    std::string reference_string = "001112222333344333555333366333344333555333366778888";
-    ProcessProperties process;
+    using std::string;
 
-    process.FIFO(reference_string);
+    string reference_string = "7 0 1 2 0 3 0 4 2 3 0 3 2 1 2";
+
+    ProcessProperties process;
+        
+    process.LFU(reference_string);
+   
 
     return 0;
 }
